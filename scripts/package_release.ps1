@@ -13,7 +13,8 @@ $build = Join-Path $root 'build-release'
 $stage = Join-Path $build 'stage'
 
 function Invoke-Checked {
-    & $args[0] $args[1..($args.Count - 1)]
+    # $args[1..0] would count down and pass the command to itself
+    if ($args.Count -gt 1) { & $args[0] $args[1..($args.Count - 1)] } else { & $args[0] }
     if ($LASTEXITCODE -ne 0) { throw "$($args[0]) failed with exit code $LASTEXITCODE" }
 }
 
