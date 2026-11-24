@@ -177,12 +177,6 @@ void RissetProcessor::processBlock (yup::AudioProcessContext<float>& context)
 {
     const yup::ScopedNoDenormals noDenormals;
 
-    auto& buffer = context.audio;
-    const int numChannels = std::min (buffer.getNumChannels(), 2);
-    const int numSamples = buffer.getNumSamples();
-    if (! prepared || numChannels == 0 || numSamples == 0)
-        return;
-
     // Host automation for this block. YUP's CLAP wrapper only collects these
     // into context.params (the VST3 one also applies them), and the engine
     // reads the parameters themselves, so apply the latest of each here.
@@ -193,6 +187,12 @@ void RissetProcessor::processBlock (yup::AudioProcessContext<float>& context)
             if (change.parameterIndex >= 0 && change.parameterIndex < static_cast<int> (all.size()))
                 all[static_cast<size_t> (change.parameterIndex)]->setNormalizedValue (change.normalizedValue);
     }
+
+    auto& buffer = context.audio;
+    const int numChannels = std::min (buffer.getNumChannels(), 2);
+    const int numSamples = buffer.getNumSamples();
+    if (! prepared || numChannels == 0 || numSamples == 0)
+        return;
 
     risset::EngineParams params;
     params.drop = drop->getValue() >= 0.5f;
