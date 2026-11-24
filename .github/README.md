@@ -8,6 +8,8 @@ and it eases back and lands in time with the track.
 Built with [YUP](https://github.com/kunitoki/yup) as VST3, AU, CLAP and a
 standalone app, for macOS and Windows.
 
+![RissetDrop: the spiral and DROP button in the middle, Rate, Ramp, Loop and Capture on the left, Focus, Voices and Mix on the right, tempo, return and mode along the bottom](screenshot.png)
+
 ## How it sounds and how to use it
 
 1. Put RissetDrop on a drum bus, a loop or the whole mix.
@@ -104,7 +106,7 @@ Give it a folder to also write WAV renders of a drum loop to listen to:
 build/risset_render_test renders
 ```
 
-[DESIGN.md](DESIGN.md) explains the DSP.
+[DESIGN.md](../DESIGN.md) explains the DSP.
 
 ### Validation status (main, after v0.1.0)
 
@@ -133,4 +135,4 @@ The Risset rhythm idea is Jean-Claude Risset's; Dan Stowell's paper
 *Scheduling and composing with Risset eternal accelerando rhythms* (ICMC 2011)
 describes the mechanics, and Timo Hoogland's
 [risset-rhythm-effect](https://github.com/tmhglnd/risset-rhythm-effect) Max
-patch was the starting reference. MIT licensed, see [LICENSE](LICENSE).
+patch was the starting reference. MIT licensed, see [LICENSE](../LICENSE).
