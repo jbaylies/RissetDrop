@@ -29,7 +29,8 @@ latency) when it isn't dropping.
 | **DROP** | Starts and stops the effect. Automatable. |
 | **Rate** | How fast it accelerates, in octaves of tempo per bar. Negative slows down; 0 holds a steady blend. Finer near zero. |
 | **Ramp** | How long the acceleration takes to fade in, and the shortest time the return takes, in beats. |
-| **Loop** | How much audio is looped: 1/4 beat to 2 bars. |
+| **Loop** | How much audio is looped: 1/4 beat to 4 bars. At very slow tempos (below about 45 BPM at 48 kHz) 4 bars won't fit and it uses 2. |
+| **Capture** | *Freeze* loops what was playing when you pressed DROP. *Live* keeps recording: each time a full new loop has played, it replaces the old one (see below). |
 | **Focus** | How many voices you hear at once: low is a wide wash of tempos, high is a tight, clearer pulse. |
 | **Voices** | 3 to 8 copies of the loop, an octave of tempo apart. Takes effect at the next drop. |
 | **Mix** | Dry/wet while dropping. |
@@ -37,6 +38,27 @@ latency) when it isn't dropping.
 | **Tempo** | The tempo to use when there is no host tempo (or in *Manual*). |
 | **Return** | *On grid* lands the return in time with the track; *Free* returns over exactly *Ramp*. |
 | **Mode** | *Varispeed* lets pitch follow speed, like tape. *Pitch lock* keeps the pitch and changes only the tempo (granular). |
+
+Click a knob's value to type one in: Enter sets it, Escape cancels. Loop
+takes things like `2 bars`, `1/2` or `8` (beats). Double-click a knob for its
+default.
+
+### Live capture
+
+With *Capture: Live*, the voices keep playing the newest audio instead of a
+frozen snapshot, so chord changes and fills come through into the drop. It
+never reads where it is writing: the loop is always the last *complete* loop
+period, and when the next one has finished recording, the voices crossfade
+to it over 50 ms (less for loops under 200 ms). The takes are exactly one
+loop apart on the bar grid, so every voice stays where it is in the rhythm;
+only the audio under it changes, once per loop. On repetitive material the
+swap is inaudible; on changing material it sounds like the loop updating on
+the downbeat. The ring around the spiral lights up in Live mode and flashes
+as each new take comes in.
+
+You can switch Capture during a drop. Each take is up to one loop period
+behind the input (fast voices play it quickly, so they run out of new audio
+and wrap within the take until the next one arrives).
 
 The spiral shows the voices: slow ones near the middle, fast ones outside, one
 turn per octave. They sit on one ray, which turns as they climb. The glow is
@@ -65,9 +87,10 @@ that.
 
 ## Testing
 
-`risset_render_test` runs the DSP engine offline through 21 scenarios
+`risset_render_test` runs the DSP engine offline through 28 scenarios
 (rates, voice counts, sample rates, odd tempos, quick taps, re-engaging during
-a return, pitch lock, two minutes of random parameter abuse) and checks for
+a return, pitch lock, live capture, 4-bar loops, two minutes of random
+parameter abuse) and checks for
 clicks, mismatches at engage and landing, grid alignment, jumps in the
 acceleration, allocations in the audio callback, and CPU spikes:
 
@@ -83,14 +106,14 @@ build/risset_render_test renders
 
 [DESIGN.md](DESIGN.md) explains the DSP.
 
-### Validation status (v0.1.0)
+### Validation status (main, after v0.1.0)
 
 | check | macOS (arm64) | Windows (x64, MSVC) |
 |---|---|---|
-| `risset_render_test` | 21/21 | 21/21 |
+| `risset_render_test` | 28/28 | 28/28 |
 | VST3 SDK `validator` | 47 passed, 0 failed | 47 passed, 0 failed |
 | `auval -v aufx RsDp Sous` | AU VALIDATION SUCCEEDED | n/a |
-| clap-validator 0.4.1 | not run | 28 passed, 4 failed, 12 skipped |
+| clap-validator 0.4.1 | not run | 28 passed, 4 failed, 12 skipped (v0.1.0) |
 
 The four clap-validator failures:
 

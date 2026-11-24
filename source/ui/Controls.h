@@ -9,6 +9,7 @@
 
 #include <yup_audio_processors/yup_audio_processors.h>
 
+#include <functional>
 #include <memory>
 
 namespace rissetdrop::ui
@@ -16,8 +17,9 @@ namespace rissetdrop::ui
 
 /** A rotary knob bound to a parameter, with its name and value underneath.
 
-    Drag up/down (shift for fine), scroll, double-click for the default. A drag
-    is one host gesture. The knob draws the parameter's normalised value, so
+    Drag up/down (shift for fine), scroll, double-click for the default, or
+    click the value to type one (Enter sets it, Escape cancels). A drag is one
+    host gesture. The knob draws the parameter's normalised value, so
     any skew lives in the parameter. Bipolar knobs fill from the middle. */
 class ParamKnob final : public yup::Component
 {
@@ -35,11 +37,26 @@ public:
     void mouseEnter (const yup::MouseEvent& event) override;
     void mouseExit (const yup::MouseEvent& event) override;
 
+    void resized() override;
+
     /** Dims the knob, for a control that has no effect right now. */
     void setDimmed (bool shouldBeDimmed);
 
 private:
+    /** The text field that opens over the value. */
+    class ValueEditor final : public yup::TextEditor
+    {
+    public:
+        ValueEditor() : yup::TextEditor ("ParamKnobValue") {}
+        std::function<void (bool commit)> onDone;
+        bool keyDown (const yup::KeyPress& key, const yup::Point<float>& position) override;
+        void focusLost() override;
+    };
+
     void setNormalized (float normalized);
+    yup::Rectangle<float> getValueArea() const;
+    void beginTyping();
+    void endTyping (bool commit);
 
     yup::AudioParameter::Ptr parameter;
     yup::String caption;
@@ -48,6 +65,8 @@ private:
     bool dragging = false, hover = false, dimmed = false;
     float dragStartValue = 0.0f;
     float dragStartY = 0.0f;
+    bool typing = false;
+    ValueEditor valueEditor;
     std::unique_ptr<yup::AudioParameterAttachment> attachment;
 };
 
@@ -75,5 +94,10 @@ private:
 
 /** Sets a parameter to a real value as one host gesture. */
 void setParameterAsGesture (yup::AudioParameter& parameter, float value);
+
+/** YUP paints on a render thread; changes to which components are shown go
+    through here, holding the window's graphics context, so no paint is in
+    progress. Message thread only. */
+void runWithGraphicsLock (yup::Component& component, const std::function<void()>& fn);
 
 } // namespace rissetdrop::ui

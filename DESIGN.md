@@ -23,6 +23,38 @@ Recording continues during a drop, so the newest few milliseconds of the loop
 them. It stops only when the next write would overwrite the loop, and resumes
 with a short splice when the drop ends.
 
+The history holds two loops of up to 21 s (2^21 samples at 44.1 or 48 kHz):
+the loop can start up to two loops back, since `p0` can be nearly `L`. A loop
+that doesn't fit is halved until it does, so it still holds whole beats.
+
+**Live capture.** Recording into the loop the voices read would put a write
+head in their path: any voice not at exactly 1× crosses it, every
+`L / |s − 1|` seconds, and each crossing jumps a whole loop in time. Live
+mode never does that. The voices read only *completed* loop periods
+("takes"). Once the next whole period has been recorded and has cleared the
+mipmap filters (`A + 2L ≤ latest safe time`), the loop start moves on by
+`L`:
+
+```
+A ← A + kL     (k ≥ 1, the newest complete take)
+```
+
+and for 50 ms (at most `L/4`) every read is a raised-cosine crossfade from
+the old take to the new one at the same loop position `P`. Since takes are
+whole loops apart on the bar grid, no voice moves and the rhythm is
+untouched; only the audio under each voice changes. Each voice still wraps
+within its take, with the usual loop-point crossfade. Recording continues,
+guarded so the write head stays clear of the oldest audio any read can reach
+(the old take, during a crossfade).
+
+If recording paused (a long frozen drop) and Live is switched on later, the
+first swap goes to the newest take before the pause; recording then resumes,
+and later takes are placed by grid time, not history time, since history
+time stood still during the pause (the engine counts the samples it didn't
+record). No take straddles the pause. The harness checks this on a tone
+that is periodic in the loop: if the takes slipped off the grid, the landing
+would not match the input.
+
 ## 2. The history buffer (`HistoryBuffer`)
 
 A stereo ring buffer of about 22 s at 48 kHz, plus a mipmap: level *n* is

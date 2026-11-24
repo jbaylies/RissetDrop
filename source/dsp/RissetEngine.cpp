@@ -99,15 +99,21 @@ void Engine::prepare (double newSampleRate, int)
 {
     sampleRate = std::max (8000.0, newSampleRate);
 
-    // Room for two loops of the longest length plus the filter and crossfade margins
-    constexpr double maxLoopSeconds = 10.0;
-    history.prepare (static_cast<int64_t> (sampleRate * (2.0 * maxLoopSeconds + 0.5)));
-    maxLoopSamples = std::floor (static_cast<double> (history.getCapacity() - 8192) * 0.5);
+    // Room for two loops of 21 s (4 bars down to about 45 BPM) plus margins:
+    // a bar-aligned loop can start up to two loops back, and a live take is
+    // swapped in only once the next one is complete. That rounds up to 2^21
+    // samples at 44.1 and 48 kHz, about 32 MB with the mipmap.
+    constexpr double maxLoopSeconds = 21.0;
+    history.prepare (static_cast<int64_t> (sampleRate * 2.0 * maxLoopSeconds));
+    recordGuard = 2048.0 + std::ceil (0.02 * sampleRate);
+    const double usable = static_cast<double> (history.getCapacity()) - recordGuard - std::ceil (0.1 * sampleRate);
+    maxLoopSamples = std::floor (usable * 0.5);
 
     rateCoefficient = onePoleCoefficient (0.04, sampleRate);
     controlCoefficient = onePoleCoefficient (0.02, sampleRate);
     engageFadeSamples = 0.015 * sampleRate;
     landFadeSamples = 0.030 * sampleRate;
+    refreshFadeSamples = 0.050 * sampleRate;
     grainLength = std::round (0.040 * sampleRate);
 
     reset();
@@ -117,6 +123,10 @@ void Engine::reset() noexcept
 {
     history.clear();
     recording = true;
+    refreshing = false;
+    refreshCount = 0;
+    unrecorded = 0.0;
+    resumedAt = 0.0;
     phase = Phase::idle;
     wetRamp = 0.0;
     windowAmount = 0.0;
@@ -145,6 +155,8 @@ void Engine::process (const float* const* input, float* const* output, int numCh
             beginRelease (params.landOnGrid);
     }
 
+    maybeRefreshLoop();
+
     const bool stereo = numChannels > 1;
 
     for (int i = 0; i < numSamples; ++i)
@@ -158,6 +170,10 @@ void Engine::process (const float* const* input, float* const* output, int numCh
             if (phase != Phase::idle && history.getWritten() >= recordUntil)
                 recording = false; // any further would overwrite the loop
         }
+        else
+        {
+            unrecorded += 1.0;
+        }
 
         rateSmooth1 += (rateTarget - rateSmooth1) * rateCoefficient;
         rateSmooth2 += (rateSmooth1 - rateSmooth2) * rateCoefficient;
@@ -168,6 +184,14 @@ void Engine::process (const float* const* input, float* const* output, int numCh
         float wetLeft = 0.0f, wetRight = 0.0f;
         if (phase != Phase::idle)
         {
+            if (refreshing)
+            {
+                refreshProgress += 1.0 / refreshFadeSamples;
+                if (refreshProgress >= 1.0)
+                    finishRefresh();
+                else
+                    refreshMix = 0.5 - 0.5 * std::cos (pi * refreshProgress);
+            }
             renderWet (wetLeft, wetRight);
             advanceControl();
         }
@@ -193,6 +217,7 @@ void Engine::updateTargets (const EngineParams& params, const Transport& transpo
     mixTarget = std::clamp (params.mix, 0.0, 1.0);
     focusTarget = std::clamp (params.focus, 0.0, 1.0);
     pitchLockTarget = params.pitchLock ? 1.0 : 0.0;
+    liveTarget = params.liveLoop;
 }
 
 //==============================================================================
@@ -222,8 +247,15 @@ void Engine::startDrop (const EngineParams& params, const Transport& transport) 
 void Engine::captureLoop (const EngineParams& params, const Transport& transport) noexcept
 {
     const double beatSamples = 60.0 / std::clamp (transport.bpm, 20.0, 999.0) * sampleRate;
-    loopLength = std::clamp (params.loopBeats * beatSamples, 0.05 * sampleRate, maxLoopSamples);
+
+    // Too long to fit (very slow tempos): halve it, so it still holds whole beats
+    loopLength = params.loopBeats * beatSamples;
+    while (loopLength > maxLoopSamples)
+        loopLength *= 0.5;
+    loopLength = std::max (loopLength, 0.05 * sampleRate);
     crossfade = std::min (0.010 * sampleRate, 0.25 * loopLength);
+    refreshing = false;
+    refreshCount = 0;
 
     const auto written = static_cast<double> (history.getWritten());
 
@@ -237,7 +269,8 @@ void Engine::captureLoop (const EngineParams& params, const Transport& transport
     // through the drop, so they arrive long before a voice reaches them, and
     // stops only before it would overwrite the loop.
     loopStart = written - loopLength - now;
-    recordUntil = static_cast<int64_t> (std::floor (loopStart - crossfade)) - 1024 + history.getCapacity();
+    loopStartReal = loopStart + unrecorded;
+    updateRecordLimit();
 
     grid = now;
 
@@ -534,6 +567,66 @@ double Engine::getCentreVoiceGridError() const noexcept
 }
 
 //==============================================================================
+void Engine::updateRecordLimit() noexcept
+{
+    // The write head may come no closer than the guard to the oldest audio a
+    // voice can read: the loop (or, mid-crossfade, the previous take) and the
+    // crossfade before its start
+    const double oldest = (refreshing ? std::min (loopStart, previousLoopStart) : loopStart) - crossfade;
+    recordUntil = static_cast<int64_t> (std::floor (oldest - recordGuard)) + history.getCapacity();
+}
+
+void Engine::maybeRefreshLoop() noexcept
+{
+    // Live: once a whole new loop period has been recorded (and has cleared
+    // the mipmap filters), it becomes the loop. The takes start one loop
+    // apart on the bar grid, so every voice keeps its position and only the
+    // audio under it changes. Nothing ever reads the audio being written:
+    // the newest take ends before the write head, and the read heads wrap
+    // within the take, so they never cross it.
+    if (! liveTarget || phase == Phase::idle || refreshing)
+        return;
+
+    // While recording is paused, history time stands still and the grid
+    // moves on, so audio recorded since a pause sits later on the grid than
+    // its history time says, by the samples that weren't recorded. Takes are
+    // whole loops apart on the grid, and none may straddle the pause.
+    const double latest = history.getLatestSafeTime() - 4.0;
+    const bool pausedSinceLoop = recording && unrecorded != loopStartReal - loopStart;
+    const double base = pausedSinceLoop ? loopStartReal - unrecorded : loopStart;
+    const double loops = std::floor ((latest - loopLength - base) / loopLength);
+    const double start = base + loops * loopLength;
+    if (loops < 1.0 || (pausedSinceLoop && start - crossfade < resumedAt))
+        return;
+
+    previousLoopStart = loopStart;
+    loopStart = start;
+    loopStartReal += loops * loopLength;
+    refreshing = true;
+    refreshProgress = 0.0;
+    refreshMix = 0.0;
+    refreshFadeSamples = std::max (1.0, std::min (0.050 * sampleRate, 0.25 * loopLength));
+    ++refreshCount;
+    updateRecordLimit();
+}
+
+void Engine::finishRefresh() noexcept
+{
+    refreshing = false;
+    refreshMix = 1.0;
+    updateRecordLimit();
+
+    // If recording had paused (a long frozen drop before Live was switched
+    // on), the newest take is clear of the write head again
+    if (! recording && history.getWritten() < recordUntil)
+    {
+        recording = true;
+        history.beginSplice();
+        resumedAt = static_cast<double> (history.getWritten()) + 1024.0; // splice and filters settled
+    }
+}
+
+//==============================================================================
 void Engine::advanceControl() noexcept
 {
     switch (phase)
@@ -580,6 +673,7 @@ void Engine::advanceControl() noexcept
             {
                 wetRamp = 0.0;
                 phase = Phase::idle;
+                refreshing = false;
                 if (! recording)
                 {
                     recording = true;
@@ -700,7 +794,23 @@ void Engine::computeWindow() noexcept
 void Engine::readLoop (double position, double level, float& left, float& right) const noexcept
 {
     position = wrapPositive (position, loopLength);
-    const double time = loopStart + position;
+    readTake (loopStart, position, level, left, right);
+
+    // Live: the previous take fades out under the new one, both read at the
+    // same loop position, so the rhythm doesn't move
+    if (refreshing)
+    {
+        float oldLeft, oldRight;
+        readTake (previousLoopStart, position, level, oldLeft, oldRight);
+        const auto a = static_cast<float> (refreshMix);
+        left = oldLeft + (left - oldLeft) * a;
+        right = oldRight + (right - oldRight) * a;
+    }
+}
+
+void Engine::readTake (double start, double position, double level, float& left, float& right) const noexcept
+{
+    const double time = start + position;
     history.read (level, time, left, right);
 
     // Across the loop point: what followed the loop end fades into its start
@@ -779,6 +889,8 @@ void Engine::publishTelemetry() noexcept
     t.releaseProgress = phase == Phase::releasing ? static_cast<float> (releaseTime / releaseLength) : 0.0f;
     t.releaseSeconds = static_cast<float> (releaseLength / sampleRate);
     t.releaseAligned = releaseAligned;
+    t.liveLoop = phase != Phase::idle && liveTarget;
+    t.refreshCount = refreshCount;
 
     for (int j = 0; j < maxVoices; ++j)
     {

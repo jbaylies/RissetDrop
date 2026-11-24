@@ -15,7 +15,7 @@ namespace rissetdrop
 {
 
 /** The window: the spiral and DROP button in the middle, the motion controls
-    (Rate, Ramp, Loop) on the left, the blend (Focus, Voices, Mix) on the
+    (Rate, Ramp, Loop, Capture) on the left, the blend (Focus, Voices, Mix) on the
     right, timing and mode along the bottom.
 
     The layout is designed at getPreferredSize() and scaled to fit, keeping
@@ -47,7 +47,7 @@ private:
         RissetProcessor& processor;
         ui::SpiralView spiral;
         ui::ParamKnob rate, ramp, loop, focus, voices, mix, tempo;
-        ui::ParamSwitch sync, landOnGrid, mode;
+        ui::ParamSwitch sync, landOnGrid, mode, live;
     };
 
     void timerCallback() override;

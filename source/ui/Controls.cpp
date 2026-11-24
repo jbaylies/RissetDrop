@@ -18,8 +18,18 @@ void setParameterAsGesture (yup::AudioParameter& parameter, float value)
     parameter.endChangeGesture();
 }
 
+void runWithGraphicsLock (yup::Component& component, const std::function<void()>& fn)
+{
+    if (auto* native = component.getNativeComponent())
+        native->runWithGraphicsContext (fn);
+    else
+        fn();
+}
+
 namespace
 {
+constexpr float knobCaptionHeight = 13.0f;
+constexpr float knobValueHeight = 16.0f;
 constexpr float startAngle = -0.75f * theme::pi; // 7:30, measured from 12 o'clock
 constexpr float endAngle = 0.75f * theme::pi;    // 4:30
 
@@ -56,6 +66,19 @@ ParamKnob::ParamKnob (yup::AudioProcessorEditor& editor, yup::AudioParameter::Pt
 {
     setOpaque (false);
     attachment = std::make_unique<yup::AudioParameterAttachment> (editor, parameter, [this] { repaint(); });
+
+    using Style = yup::TextEditor::Style;
+    valueEditor.setMultiLine (false);
+    valueEditor.setFont (theme::font (14.0f));
+    valueEditor.setJustification (yup::Justification::horizontalCenter);
+    valueEditor.setColor (Style::backgroundColorId, theme::background);
+    valueEditor.setColor (Style::outlineColorId, color);
+    valueEditor.setColor (Style::focusedOutlineColorId, color);
+    valueEditor.setColor (Style::textColorId, theme::text);
+    valueEditor.setColor (Style::caretColorId, color);
+    valueEditor.setColor (Style::selectionColorId, color.withAlpha (0.35f));
+    valueEditor.onDone = [this] (bool commit) { endTyping (commit); };
+    addChildComponent (valueEditor);
 }
 
 ParamKnob::~ParamKnob()
@@ -73,11 +96,26 @@ void ParamKnob::setDimmed (bool shouldBeDimmed)
     }
 }
 
+yup::Rectangle<float> ParamKnob::getValueArea() const
+{
+    const auto bounds = getLocalBounds();
+    const float size = std::min (bounds.getWidth(), bounds.getHeight() - knobCaptionHeight - knobValueHeight - 4.0f);
+    const float radius = size * 0.5f - 3.0f;
+    const float top = bounds.getY() + size * 0.5f + radius + 3.0f + knobCaptionHeight;
+    return { bounds.getX(), top, bounds.getWidth(), knobValueHeight };
+}
+
+void ParamKnob::resized()
+{
+    const auto area = getValueArea();
+    const float width = std::min (area.getWidth(), 110.0f);
+    valueEditor.setBounds (area.withSizeKeepingCenter (width, 14.0f * 1.35f + 8.0f));
+}
+
 void ParamKnob::paint (yup::Graphics& g)
 {
     const auto bounds = getLocalBounds();
-    const float captionHeight = 13.0f, valueHeight = 16.0f;
-    const float size = std::min (bounds.getWidth(), bounds.getHeight() - captionHeight - valueHeight - 4.0f);
+    const float size = std::min (bounds.getWidth(), bounds.getHeight() - knobCaptionHeight - knobValueHeight - 4.0f);
     const auto centre = yup::Point<float> (bounds.getCenterX(), bounds.getY() + size * 0.5f);
     const float radius = size * 0.5f - 3.0f;
     const float thickness = std::clamp (size * 0.07f, 3.0f, 8.0f);
@@ -114,10 +152,67 @@ void ParamKnob::paint (yup::Graphics& g)
 
     // Name, then value
     auto text = bounds.withTrimmedTop (centre.getY() + radius + 3.0f - bounds.getY());
-    theme::drawText (g, caption.toUpperCase(), theme::font (11.0f), text.removeFromTop (captionHeight),
+    theme::drawText (g, caption.toUpperCase(), theme::font (11.0f), text.removeFromTop (knobCaptionHeight),
                      dimmed ? theme::faint : theme::dim);
-    theme::drawText (g, parameter->toString(), theme::font (14.0f), text.removeFromTop (valueHeight),
-                     dimmed ? theme::faint : theme::text);
+    if (! typing)
+        theme::drawText (g, parameter->toString(), theme::font (14.0f), text.removeFromTop (knobValueHeight),
+                         dimmed ? theme::faint : theme::text);
+}
+
+void ParamKnob::beginTyping()
+{
+    if (typing)
+        return;
+    typing = true;
+    runWithGraphicsLock (*this, [this]
+    {
+        valueEditor.setText (parameter->toString(), yup::dontSendNotification);
+        valueEditor.setVisible (true);
+    });
+    valueEditor.takeKeyboardFocus();
+    valueEditor.selectAll();
+    repaint();
+}
+
+void ParamKnob::endTyping (bool commit)
+{
+    if (! typing)
+        return;
+    typing = false; // first: hiding the editor loses its focus, which ends typing again
+
+    if (commit)
+    {
+        const auto text = valueEditor.getText().trim();
+        if (text.isNotEmpty())
+        {
+            const float lowest = parameter->convertToDenormalizedValue (0.0f);
+            const float highest = parameter->convertToDenormalizedValue (1.0f);
+            const float value = parameter->convertFromString (text);
+            if (std::isfinite (value))
+                setParameterAsGesture (*parameter, std::clamp (value, std::min (lowest, highest), std::max (lowest, highest)));
+        }
+    }
+
+    runWithGraphicsLock (*this, [this] { valueEditor.setVisible (false); });
+    repaint();
+}
+
+bool ParamKnob::ValueEditor::keyDown (const yup::KeyPress& key, const yup::Point<float>& position)
+{
+    if (key.getKey() == yup::KeyPress::enterKey || key.getKey() == yup::KeyPress::escapeKey)
+    {
+        if (onDone)
+            onDone (key.getKey() == yup::KeyPress::enterKey);
+        return true;
+    }
+    return yup::TextEditor::keyDown (key, position);
+}
+
+void ParamKnob::ValueEditor::focusLost()
+{
+    yup::TextEditor::focusLost();
+    if (onDone)
+        onDone (true); // clicking elsewhere keeps what was typed
 }
 
 void ParamKnob::setNormalized (float normalized)
@@ -128,6 +223,12 @@ void ParamKnob::setNormalized (float normalized)
 
 void ParamKnob::mouseDown (const yup::MouseEvent& event)
 {
+    if (getValueArea().contains (event.getPosition()))
+    {
+        beginTyping();
+        return;
+    }
+
     dragging = true;
     dragStartValue = parameter->getNormalizedValue();
     dragStartY = event.getPosition().getY();

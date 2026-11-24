@@ -72,6 +72,13 @@ void SpiralView::tick (double frameSeconds)
     clock += frameSeconds;
     const float target = telemetry.wet;
     glow += (target - glow) * std::min (1.0f, static_cast<float> (frameSeconds) * 12.0f);
+    if (telemetry.refreshCount != lastRefreshCount)
+    {
+        lastRefreshCount = telemetry.refreshCount;
+        if (telemetry.refreshCount > 0)
+            flash = 1.0f;
+    }
+    flash *= std::exp (-static_cast<float> (frameSeconds) * 6.0f);
     repaint();
 }
 
@@ -132,12 +139,21 @@ void SpiralView::paintRing (yup::Graphics& g, const Geometry& geo)
 {
     const float ringRadius = geo.radius * 0.95f;
 
-    g.setStrokeColor (theme::hairline);
-    g.setStrokeWidth (1.5f);
+    // Live, the ring is lit, and flashes as each new take comes in
+    if (telemetry.liveLoop)
+    {
+        g.setStrokeColor (theme::voiceColor (3).withAlpha (0.35f + 0.65f * flash));
+        g.setStrokeWidth (1.5f + 2.0f * flash);
+    }
+    else
+    {
+        g.setStrokeColor (theme::hairline);
+        g.setStrokeWidth (1.5f);
+    }
     strokeCircle (g, geo.centre, ringRadius);
 
     // Beat ticks around the loop
-    const double loopBeats = loopChoices[static_cast<size_t> (std::clamp (static_cast<int> (std::lround (processor.loop->getValue())), 0, 5))];
+    const double loopBeats = loopBeatsFor (processor.loop->getValue());
     const int ticks = std::clamp (static_cast<int> (std::lround (loopBeats < 1.0 ? 4.0 : loopBeats)), 4, 16);
     for (int i = 0; i < ticks; ++i)
     {
@@ -260,7 +276,7 @@ void SpiralView::paintButton (yup::Graphics& g, const Geometry& geo)
     // A soft halo with the wet signal, pulsing on the loop's beats
     if (glow > 0.01f)
     {
-        const double loopBeats = std::max (1.0, loopChoices[static_cast<size_t> (std::clamp (static_cast<int> (std::lround (processor.loop->getValue())), 0, 5))]);
+        const double loopBeats = std::max (1.0, loopBeatsFor (processor.loop->getValue()));
         const float beat = static_cast<float> (std::fmod (static_cast<double> (telemetry.gridPhase) * loopBeats, 1.0));
         const float pulse = std::exp (-beat * 5.0f);
         g.setFillColor (tint.withAlpha (0.10f * glow + 0.12f * glow * pulse));

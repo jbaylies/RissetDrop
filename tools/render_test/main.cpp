@@ -53,7 +53,7 @@ void operator delete (void* p, std::size_t) noexcept { std::free (p); }
 namespace
 {
 constexpr double pi = 3.14159265358979323846;
-constexpr double risset_loop_choices[] = { 0.25, 0.5, 1.0, 2.0, 4.0, 8.0 };
+constexpr double risset_loop_choices[] = { 0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0 };
 
 struct Biquad
 {
@@ -176,7 +176,10 @@ struct Scenario
     double clickLimitDb = -50.0;
     double landLimitDb = -50.0;
     std::vector<std::pair<double, double>> rateChanges; // seconds, octaves per bar
+    std::vector<std::pair<double, bool>> liveChanges;   // seconds, live on/off
     bool fuzz = false;
+    int minRefreshes = 0;        // live takes that must come in
+    double expectLoopSeconds = 0.0; // if set, the loop length the drop must use
 };
 
 struct Result
@@ -196,6 +199,8 @@ struct Result
     double worstBlockLoad = 0.0; // processing time / block duration
     int worstBlockPhase = 0;
     double worstBlockSeconds = 0.0;
+    int refreshes = 0;
+    double loopSeconds = 0.0;
 };
 
 Result run (Scenario s, const std::string& wavFolder)
@@ -205,6 +210,8 @@ Result run (Scenario s, const std::string& wavFolder)
     for (auto& e : s.events)
         e.seconds += preroll;
     for (auto& change : s.rateChanges)
+        change.first += preroll;
+    for (auto& change : s.liveChanges)
         change.first += preroll;
     s.seconds += preroll;
 
@@ -238,6 +245,9 @@ Result run (Scenario s, const std::string& wavFolder)
         for (const auto& [when, rate] : s.rateChanges)
             if (when <= now)
                 params.rateOctavesPerBar = rate;
+        for (const auto& [when, live] : s.liveChanges)
+            if (when <= now)
+                params.liveLoop = live;
 
         const int n = static_cast<int> (std::min<int64_t> (s.blockSize, total - start));
         for (int i = 0; i < n; ++i)
@@ -272,9 +282,11 @@ Result run (Scenario s, const std::string& wavFolder)
             if (unit (fuzzRng) < 0.002)
                 params.rampBeats = 0.25 + unit (fuzzRng) * 12.0;
             if (unit (fuzzRng) < 0.001)
-                params.loopBeats = risset_loop_choices[static_cast<size_t> (unit (fuzzRng) * 5.99)];
+                params.loopBeats = risset_loop_choices[static_cast<size_t> (unit (fuzzRng) * 6.99)];
             if (unit (fuzzRng) < 0.002)
                 params.landOnGrid = ! params.landOnGrid;
+            if (unit (fuzzRng) < 0.002)
+                params.liveLoop = ! params.liveLoop;
         }
 
         countingAllocations = true;
@@ -297,6 +309,11 @@ Result run (Scenario s, const std::string& wavFolder)
             result.aligned = engine.isReleaseAligned();
             result.releaseSeconds = engine.getPlannedReleaseSamples() / s.sampleRate;
         }
+        if (t.refreshCount != result.refreshes && std::getenv ("RISSET_VERBOSE") != nullptr)
+            std::printf ("    [%s] take %d at %.4f s\n", s.name.c_str(), t.refreshCount, now - preroll);
+        result.refreshes = std::max (result.refreshes, t.refreshCount);
+        if (t.phase != risset::Phase::idle)
+            result.loopSeconds = engine.getLoopSamples() / s.sampleRate;
         if (t.phase != risset::Phase::idle)
         {
             if (haveRate)
@@ -507,6 +524,91 @@ int main (int argc, char** argv)
     }
     {
         Scenario s;
+        s.name = "live_tone_1bar";
+        s.params.liveLoop = true;
+        s.params.rateOctavesPerBar = 1.0;
+        s.events = { { 1.0, true }, { 12.0, false } };
+        s.minRefreshes = 5;
+        add (s);
+    }
+    {
+        Scenario s;
+        s.name = "live_seam_4bars";
+        s.params.liveLoop = true;
+        s.params.loopBeats = 16.0;
+        s.params.rateOctavesPerBar = 0.5;
+        s.signal = Signal::seamTone; // every take differs in phase: the take crossfades are heard
+        s.events = { { 14.0, true }, { 44.0, false } }; // two loops of history first
+        s.seconds = 64.0;
+        s.minRefreshes = 3;
+        s.expectLoopSeconds = 8.0;
+        add (s);
+    }
+    {
+        Scenario s;
+        s.name = "live_pitch_lock_drums";
+        s.params.liveLoop = true;
+        s.params.pitchLock = true;
+        s.params.loopBeats = 2.0;
+        s.signal = Signal::drums;
+        s.expectAligned = false;
+        s.events = { { 1.0, true }, { 15.0, false } };
+        s.blockSize = 32;
+        s.minRefreshes = 10;
+        add (s);
+    }
+    {
+        Scenario s;
+        s.name = "live_toggled_long_drop";
+        s.params.rateOctavesPerBar = 0.5;
+        s.signal = Signal::seamTone;
+        s.liveChanges = { { 10.0, false }, { 70.0, true } }; // frozen long enough that recording pauses
+        s.params.liveLoop = true;
+        s.events = { { 1.0, true }, { 85.0, false } };
+        s.seconds = 95.0;
+        s.minRefreshes = 5;
+        add (s);
+    }
+    {
+        // As above on the aligned tone: takes recorded after the pause must
+        // still sit on the grid, or the landing won't match the input
+        Scenario s;
+        s.name = "live_toggled_aligned";
+        s.params.rateOctavesPerBar = 0.5;
+        s.liveChanges = { { 10.0, false }, { 70.0, true } };
+        s.params.liveLoop = true;
+        s.events = { { 1.0, true }, { 85.0, false } };
+        s.seconds = 95.0;
+        s.minRefreshes = 5;
+        add (s);
+    }
+    {
+        Scenario s;
+        s.name = "four_bars_40bpm_44k";
+        s.sampleRate = 44100.0;
+        s.bpm = 40.0;
+        s.params.loopBeats = 16.0; // 24 s doesn't fit: halved to 2 bars
+        s.params.rateOctavesPerBar = 1.0;
+        s.events = { { 26.0, true }, { 60.0, false } };
+        s.seconds = 90.0;
+        s.expectLoopSeconds = 12.0;
+        add (s);
+    }
+    {
+        Scenario s;
+        s.name = "four_bars_live_47bpm";
+        s.bpm = 46.875; // 250 Hz repeats every beat
+        s.params.liveLoop = true;
+        s.params.loopBeats = 16.0; // 20.5 s: just fits twice
+        s.params.rateOctavesPerBar = 1.0;
+        s.events = { { 42.0, true }, { 95.0, false } }; // two loops of history first
+        s.seconds = 120.0;
+        s.minRefreshes = 2;
+        s.expectLoopSeconds = 16.0 * 60.0 / 46.875;
+        add (s);
+    }
+    {
+        Scenario s;
         s.name = "no_transport";
         s.hasTransport = false;
         s.expectAligned = false;
@@ -541,11 +643,15 @@ int main (int argc, char** argv)
             problems.push_back ("allocates");
         if (r.peak > 1.5)
             problems.push_back ("too loud");
+        if (r.refreshes < s.minRefreshes)
+            problems.push_back ("only " + std::to_string (r.refreshes) + " live takes came in");
+        if (s.expectLoopSeconds > 0.0 && std::abs (r.loopSeconds - s.expectLoopSeconds) > 1.0e-3)
+            problems.push_back ("loop was " + std::to_string (r.loopSeconds) + " s");
 
         std::printf ("%-26s %8.1f %8.1f %8.1f %9.4f %9.4f %7.2f %6s %6ld %6.1f  %s\n", s.name.c_str(), r.hfPeakDb, r.engageDiffDb,
                      r.landDiffDb, r.maxRateJump, r.landingError, r.releaseSeconds, r.aligned ? "yes" : "no", r.allocations,
                      100.0 * r.worstBlockLoad, problems.empty() ? "ok" : "FAIL");
-        if (r.hfPeakDb > s.clickLimitDb)
+        if (r.hfPeakDb > s.clickLimitDb || std::getenv ("RISSET_VERBOSE") != nullptr)
             std::printf ("    HF peak at %.4f s, phase %d\n", r.hfPeakSeconds, r.hfPeakPhase);
         for (const auto& p : problems)
             std::printf ("    - %s\n", p.c_str());
@@ -571,6 +677,11 @@ int main (int argc, char** argv)
         s.name = "drums_pitch_lock";
         s.params.rateOctavesPerBar = 1.0;
         s.params.pitchLock = true;
+        run (s, wavFolder);
+
+        s.name = "drums_live";
+        s.params.pitchLock = false;
+        s.params.liveLoop = true;
         run (s, wavFolder);
         std::printf ("\nWrote WAV renders to %s\n", wavFolder.c_str());
     }

@@ -39,6 +39,7 @@ struct EngineParams
     double mix = 1.0;        // 0..1
     bool landOnGrid = true;  // phase-align the return to the transport
     bool pitchLock = false;  // granular: speed changes time, not pitch
+    bool liveLoop = false;   // keep recording into the loop: each loop period, the newest take replaces it
 };
 
 /** The host's transport, or the manual tempo when there is none. */
@@ -73,6 +74,8 @@ struct Telemetry
     float releaseProgress = 0.0f;    // 0..1 while releasing
     float releaseSeconds = 0.0f;     // length of the planned return
     bool releaseAligned = false;     // the return lands on the grid
+    bool liveLoop = false;           // the loop refreshes from the input
+    int refreshCount = 0;            // live takes swapped in since the drop started
     std::array<Voice, maxVoices> voices {};
 };
 
@@ -81,8 +84,11 @@ struct Telemetry
 
     How it works, in short (DESIGN.md has the long version):
 
-    - The input always records into a mipmapped HistoryBuffer. A drop freezes
-      it and plays a loop of the last loopBeats beats, aligned to the bar grid.
+    - The input always records into a mipmapped HistoryBuffer. A drop plays a
+      loop of the last loopBeats beats, aligned to the bar grid. Frozen, that
+      loop stays put; live, it moves on by a loop each loop period, so the
+      voices play the newest complete take, with a short crossfade between
+      takes (the read heads never cross the write head).
     - V voices play the loop one octave apart: voice j at speed
       2^(j + phi - V/2). phi climbs at the acceleration rate (octaves per
       sample) and wraps at 1, when the voices move up a slot and the top one
@@ -121,6 +127,10 @@ public:
     /** For tests: the loop-position error of the 1x voice against the grid, in samples. */
     double getCentreVoiceGridError() const noexcept;
 
+    /** For tests: live takes swapped in since the drop started, and the loop length in samples. */
+    int getRefreshCount() const noexcept { return refreshCount; }
+    double getLoopSamples() const noexcept { return loopLength; }
+
     static constexpr int positionHeadroom = 16; // F: octaves of exact positions below the ladder
 
 private:
@@ -129,11 +139,15 @@ private:
     void captureLoop (const EngineParams& params, const Transport& transport) noexcept;
     void beginRelease (bool landOnGrid) noexcept;
     void finishRelease() noexcept;
+    void maybeRefreshLoop() noexcept;
+    void finishRefresh() noexcept;
+    void updateRecordLimit() noexcept;
 
     void advanceControl() noexcept;
     void advancePhi (double delta) noexcept;
     void renderWet (float& left, float& right) noexcept;
     void readLoop (double position, double level, float& left, float& right) const noexcept;
+    void readTake (double start, double position, double level, float& left, float& right) const noexcept;
     void computeWindow() noexcept;
 
     double voicePosition (int label) const noexcept;
@@ -144,7 +158,8 @@ private:
     void publishTelemetry() noexcept;
 
     double sampleRate = 48000.0;
-    double maxLoopSamples = 0.0;
+    double maxLoopSamples = 0.0;     // two of them fit in the history
+    double recordGuard = 0.0;        // samples kept clear between the write head and the oldest read
     HistoryBuffer history;
     bool recording = true;
     int64_t recordUntil = 0; // during a drop, the last history time that spares the loop
@@ -156,6 +171,18 @@ private:
     double loopLength = 1.0; // L, samples
     double crossfade = 1.0;  // X, samples of loop-boundary crossfade
     double grid = 0.0;       // D, the transport's position in the loop
+
+    // Live loop: the previous take fades out as the newest fades in
+    bool liveTarget = false;
+    bool refreshing = false;
+    double previousLoopStart = 0.0;
+    double loopStartReal = 0.0;   // A plus the samples not recorded before it: where it sits on the grid
+    double unrecorded = 0.0;      // samples not recorded since reset (recording paused mid-drop)
+    double resumedAt = 0.0;       // history time after which recording is continuous again
+    double refreshProgress = 0.0; // 0..1 through the take crossfade
+    double refreshMix = 1.0;      // its gain on the new take
+    double refreshFadeSamples = 1.0;
+    int refreshCount = 0;
 
     // Ladder
     int numVoices = 5;

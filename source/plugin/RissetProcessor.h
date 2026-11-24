@@ -10,12 +10,21 @@
 #include <yup_audio_processors/yup_audio_processors.h>
 
 #include <atomic>
+#include <iterator>
 
 namespace rissetdrop
 {
 
 /** Loop lengths offered by the Loop parameter, in beats. */
-inline constexpr double loopChoices[] = { 0.25, 0.5, 1.0, 2.0, 4.0, 8.0 };
+inline constexpr double loopChoices[] = { 0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0 };
+inline constexpr int numLoopChoices = static_cast<int> (std::size (loopChoices));
+
+/** The loop length in beats for a Loop parameter value. */
+inline double loopBeatsFor (float parameterValue) noexcept
+{
+    const auto index = static_cast<int> (parameterValue + 0.5f);
+    return loopChoices[static_cast<size_t> (index < 0 ? 0 : (index >= numLoopChoices ? numLoopChoices - 1 : index))];
+}
 
 /** Stereo in, stereo out. Owns the engine and the parameters. */
 class RissetProcessor final : public yup::AudioProcessor
@@ -25,7 +34,7 @@ public:
     ~RissetProcessor() override;
 
     // Parameters, in the order hosts list them. Their host IDs never change.
-    yup::AudioParameter::Ptr drop, rate, ramp, loop, voices, focus, mix, sync, tempo, landOnGrid, mode;
+    yup::AudioParameter::Ptr drop, rate, ramp, loop, voices, focus, mix, sync, tempo, landOnGrid, mode, live;
 
     /** Any thread: what the engine is doing, for the visualiser. */
     risset::Telemetry readTelemetry() noexcept { return engine.readTelemetry(); }

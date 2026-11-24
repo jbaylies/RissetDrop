@@ -54,7 +54,35 @@ yup::String describeBeats (double beats)
         return "1 bar";
     if (beats == 8.0)
         return "2 bars";
+    if (beats == 16.0)
+        return "4 bars";
     return formatNumber (beats, 0) + " beats";
+}
+/** Typed loop lengths: "1 bar", "2 bars", "1/2", "8 beats", or a number of
+    beats. Picks the nearest choice. */
+float parseLoop (const yup::String& typed)
+{
+    const auto text = typed.trim().toLowerCase();
+    for (int i = 0; i < numLoopChoices; ++i)
+        if (text == describeBeats (loopChoices[i]).toLowerCase())
+            return static_cast<float> (i);
+
+    double beats = text.getDoubleValue();
+    if (text.containsChar ('/'))
+    {
+        const double denominator = text.fromFirstOccurrenceOf ("/", false, false).getDoubleValue();
+        beats = denominator > 0.0 ? beats / denominator : beats;
+    }
+    if (text.contains ("bar"))
+        beats *= 4.0;
+    if (! (beats > 0.0))
+        return 4.0f; // 1 bar
+
+    int best = 0;
+    for (int i = 1; i < numLoopChoices; ++i)
+        if (std::abs (std::log2 (beats / loopChoices[i])) < std::abs (std::log2 (beats / loopChoices[best])))
+            best = i;
+    return static_cast<float> (best);
 }
 } // namespace
 
@@ -95,19 +123,12 @@ RissetProcessor::RissetProcessor()
                .withID ("loop")
                .withName ("Loop")
                .withHostID (4)
-               .withRange (yup::NormalisableRange<float> (0.0f, 5.0f, 1.0f))
+               .withRange (yup::NormalisableRange<float> (0.0f, static_cast<float> (numLoopChoices - 1), 1.0f))
                .withDefault (4.0f)
                .withStepped (true)
                .withEnum (true)
-               .withValueToString ([] (float v)
-                                   { return describeBeats (loopChoices[static_cast<size_t> (std::clamp (static_cast<int> (std::lround (v)), 0, 5))]); })
-               .withStringToValue ([] (const yup::String& t)
-                                   {
-                                       for (int i = 0; i < 6; ++i)
-                                           if (t.equalsIgnoreCase (describeBeats (loopChoices[i])))
-                                               return static_cast<float> (i);
-                                       return std::clamp (t.getFloatValue(), 0.0f, 5.0f);
-                                   })
+               .withValueToString ([] (float v) { return describeBeats (loopBeatsFor (v)); })
+               .withStringToValue (parseLoop)
                .build();
 
     voices = yup::AudioParameterBuilder()
@@ -152,8 +173,9 @@ RissetProcessor::RissetProcessor()
 
     landOnGrid = toggle ("land", "Land on Grid", 10, true, "Free", "Grid");
     mode = toggle ("mode", "Mode", 11, false, "Varispeed", "Pitch Lock");
+    live = toggle ("live", "Capture", 12, false, "Freeze", "Live");
 
-    for (const auto& p : { drop, rate, ramp, loop, voices, focus, mix, sync, tempo, landOnGrid, mode })
+    for (const auto& p : { drop, rate, ramp, loop, voices, focus, mix, sync, tempo, landOnGrid, mode, live })
         addParameter (p);
 }
 
@@ -187,12 +209,13 @@ void RissetProcessor::processBlock (yup::AudioProcessContext<float>& context)
     params.drop = drop->getValue() >= 0.5f;
     params.rateOctavesPerBar = static_cast<double> (rate->getValue());
     params.rampBeats = static_cast<double> (ramp->getValue());
-    params.loopBeats = loopChoices[static_cast<size_t> (std::clamp (static_cast<int> (std::lround (loop->getValue())), 0, 5))];
+    params.loopBeats = loopBeatsFor (loop->getValue());
     params.voices = static_cast<int> (std::lround (voices->getValue()));
     params.focus = static_cast<double> (focus->getValue()) / 100.0;
     params.mix = static_cast<double> (mix->getValue()) / 100.0;
     params.landOnGrid = landOnGrid->getValue() >= 0.5f;
     params.pitchLock = mode->getValue() >= 0.5f;
+    params.liveLoop = live->getValue() >= 0.5f;
 
     risset::Transport transport;
     transport.bpm = static_cast<double> (tempo->getValue());

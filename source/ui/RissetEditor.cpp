@@ -32,10 +32,11 @@ RissetEditor::Content::Content (RissetEditor& editor, RissetProcessor& p)
     , sync (editor, p.sync, "Tempo source", "Manual", "Host", theme::voiceColor (4))
     , landOnGrid (editor, p.landOnGrid, "Return", "Free", "On grid", theme::voiceColor (2))
     , mode (editor, p.mode, "Mode", "Varispeed", "Pitch lock", theme::voiceColor (5))
+    , live (editor, p.live, "Capture", "Freeze", "Live", theme::voiceColor (3))
 {
     setOpaque (true);
     for (auto* c : std::initializer_list<yup::Component*> { &spiral, &rate, &ramp, &loop, &focus, &voices, &mix,
-                                                           &tempo, &sync, &landOnGrid, &mode })
+                                                           &tempo, &sync, &landOnGrid, &mode, &live })
         addAndMakeVisible (*c);
 }
 
@@ -49,15 +50,18 @@ void RissetEditor::Content::resized()
     auto right = bounds.removeFromRight (sideWidth).reduced (18.0f, 10.0f);
     spiral.setBounds (bounds.reduced (6.0f));
 
-    // Left: the motion. Rate is the big one.
-    rate.setBounds (left.removeFromTop (left.getHeight() * 0.56f).reduced (8.0f, 0.0f));
-    left.removeFromTop (10.0f);
+    // Left: the motion. Rate is the big one; Capture sits under Loop.
+    rate.setBounds (left.removeFromTop (left.getHeight() * 0.5f).reduced (8.0f, 0.0f));
+    live.setBounds (left.removeFromBottom (46.0f).reduced (6.0f, 0.0f));
+    left.removeFromBottom (6.0f);
+    left.removeFromTop (8.0f);
     ramp.setBounds (left.removeFromLeft (left.getWidth() * 0.5f));
     loop.setBounds (left);
 
     // Right: the blend. Focus is the big one.
-    focus.setBounds (right.removeFromTop (right.getHeight() * 0.56f).reduced (8.0f, 0.0f));
-    right.removeFromTop (10.0f);
+    focus.setBounds (right.removeFromTop (right.getHeight() * 0.5f).reduced (8.0f, 0.0f));
+    right.removeFromBottom (52.0f);
+    right.removeFromTop (8.0f);
     voices.setBounds (right.removeFromLeft (right.getWidth() * 0.5f));
     mix.setBounds (right);
 
@@ -99,7 +103,7 @@ void RissetEditor::Content::paint (yup::Graphics& g)
     {
         const float rateNow = t.octavesPerSecond;
         status = (rateNow >= 0.0f ? "+" : "") + yup::String (static_cast<double> (rateNow), 2) + " oct/s   "
-               + yup::String (static_cast<double> (t.loopSeconds), 2) + " s loop   " + status;
+               + yup::String (static_cast<double> (t.loopSeconds), 2) + (t.liveLoop ? " s live loop   " : " s loop   ") + status;
     }
     theme::drawText (g, status, theme::font (13.0f), header, theme::dim, yup::Justification::centerRight);
 

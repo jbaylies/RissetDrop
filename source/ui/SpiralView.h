@@ -57,7 +57,9 @@ private:
     RissetProcessor& processor;
     risset::Telemetry telemetry;
     double clock = 0.0;
-    float glow = 0.0f; // eased wet, for the button
+    float glow = 0.0f;  // eased wet, for the button
+    float flash = 0.0f; // brightens the ring when a live take comes in
+    int lastRefreshCount = 0;
     bool hoverButton = false;
 };
 
