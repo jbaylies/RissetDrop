@@ -183,6 +183,17 @@ void RissetProcessor::processBlock (yup::AudioProcessContext<float>& context)
     if (! prepared || numChannels == 0 || numSamples == 0)
         return;
 
+    // Host automation for this block. YUP's CLAP wrapper only collects these
+    // into context.params (the VST3 one also applies them), and the engine
+    // reads the parameters themselves, so apply the latest of each here.
+    // Settings are per block; a value that is already current is a no-op.
+    {
+        const auto all = getParameters();
+        for (const auto& change : context.params)
+            if (change.parameterIndex >= 0 && change.parameterIndex < static_cast<int> (all.size()))
+                all[static_cast<size_t> (change.parameterIndex)]->setNormalizedValue (change.normalizedValue);
+    }
+
     risset::EngineParams params;
     params.drop = drop->getValue() >= 0.5f;
     params.rateOctavesPerBar = static_cast<double> (rate->getValue());
@@ -245,10 +256,6 @@ yup::Result RissetProcessor::loadStateFromDataTree (const yup::DataTree& state)
 
     for (const auto& parameter : getParameters())
     {
-        // A session never reopens mid-drop: there would be no loop to play
-        if (parameter == drop)
-            continue;
-
         const auto id = yup::Identifier (parameter->getID());
         if (state.hasProperty (id))
             parameter->setValueNotifyingHost (static_cast<float> (static_cast<double> (state.getProperty (id))));
