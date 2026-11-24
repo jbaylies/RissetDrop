@@ -1,0 +1,57 @@
+RissetDrop @VERSION@ for macOS
+==============================
+
+An audio effect that makes the beat seem to speed up (or slow down) forever,
+for drops, risers and fills. AU, VST3 and CLAP plugins plus a standalone app.
+Universal (Apple Silicon and Intel), macOS 11 or later.
+
+Source and manual: https://github.com/jbaylies/RissetDrop
+
+
+Install
+-------
+
+Copy each plugin into its folder. In Finder, use Go > Go to Folder and paste
+the path. Create the folder if it doesn't exist.
+
+  RissetDrop.component   ~/Library/Audio/Plug-Ins/Components   (AU: Logic, GarageBand, Ableton Live)
+  RissetDrop.vst3        ~/Library/Audio/Plug-Ins/VST3         (Ableton Live, Cubase, Reaper)
+  RissetDrop.clap        ~/Library/Audio/Plug-Ins/CLAP         (Bitwig, Reaper)
+  RissetDrop.app         anywhere, such as /Applications
+
+Then rescan plugins in your DAW.
+
+
+"RissetDrop can't be opened" or the plugin doesn't appear
+---------------------------------------------------------
+
+These builds aren't signed with an Apple Developer ID, so macOS blocks them
+after download. To allow them, run this in Terminal once per copied file:
+
+  xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/Components/RissetDrop.component
+  xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/VST3/RissetDrop.vst3
+  xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/CLAP/RissetDrop.clap
+  xattr -dr com.apple.quarantine /Applications/RissetDrop.app
+
+If Logic still doesn't list the AU, log out and back in, or run
+  killall -9 AudioComponentRegistrar
+and rescan in Logic's Plug-in Manager.
+
+The standalone app processes your audio input: allow microphone access when
+macOS asks, and pick the interface with the Settings button.
+
+
+Using it
+--------
+
+Put RissetDrop on a drum bus, a loop or the mix. Press DROP (or automate the
+Drop parameter) a bar or two before the moment you're building into, and
+release it on the downbeat. With Return set to "On grid" it lands back in time
+with the track. The README on GitHub explains every control.
+
+
+Licenses
+--------
+
+LICENSE: RissetDrop is MIT licensed.
+THIRD_PARTY_LICENSES.txt: the libraries built into it.

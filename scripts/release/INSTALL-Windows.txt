@@ -1,0 +1,50 @@
+RissetDrop @VERSION@ for Windows
+================================
+
+An audio effect that makes the beat seem to speed up (or slow down) forever,
+for drops, risers and fills. VST3 and CLAP plugins plus a standalone app.
+64-bit Windows 10 or later. Nothing else needs installing.
+
+Source and manual: https://github.com/jbaylies/RissetDrop
+
+
+Install
+-------
+
+Copy each plugin into its folder. Create the folder if it doesn't exist.
+
+  RissetDrop.vst3   C:\Program Files\Common Files\VST3   (Ableton Live, Cubase, Reaper)
+  RissetDrop.clap   C:\Program Files\Common Files\CLAP   (Bitwig, Reaper)
+  RissetDrop.exe    anywhere
+
+RissetDrop.vst3 is a folder: copy the whole folder. Copying into Program Files
+asks for administrator rights. Without them, use the per-user folders instead,
+%LOCALAPPDATA%\Programs\Common\VST3 and %LOCALAPPDATA%\Programs\Common\CLAP,
+though not every DAW scans them.
+
+Then rescan plugins in your DAW. In Ableton Live, turn on "Use VST3 Plug-In
+System Folders" in Settings > Plug-Ins.
+
+
+"Windows protected your PC"
+---------------------------
+
+RissetDrop.exe isn't code-signed, so SmartScreen warns about it the first
+time. Click More info, then Run anyway. DAWs load the plugins without this
+warning.
+
+
+Using it
+--------
+
+Put RissetDrop on a drum bus, a loop or the mix. Press DROP (or automate the
+Drop parameter) a bar or two before the moment you're building into, and
+release it on the downbeat. With Return set to "On grid" it lands back in time
+with the track. The README on GitHub explains every control.
+
+
+Licenses
+--------
+
+LICENSE: RissetDrop is MIT licensed.
+THIRD_PARTY_LICENSES.txt: the libraries built into it.
