@@ -1,0 +1,3 @@
+[submodule "yup"]
+	path = yup
+	url = https://github.com/kunitoki/yup
