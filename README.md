@@ -83,6 +83,27 @@ build/risset_render_test renders
 
 [DESIGN.md](DESIGN.md) explains the DSP.
 
+### Validation status (v0.1.0)
+
+| check | macOS (arm64) | Windows (x64, MSVC) |
+|---|---|---|
+| `risset_render_test` | 21/21 | 21/21 |
+| VST3 SDK `validator` | 47 passed, 0 failed | 47 passed, 0 failed |
+| `auval -v aufx RsDp Sous` | AU VALIDATION SUCCEEDED | n/a |
+| clap-validator 0.4.1 | not run | 28 passed, 4 failed, 12 skipped |
+
+The four clap-validator failures:
+
+- `process-audio-basic-in-place` is a known bug in YUP's CLAP wrapper (its
+  in-place port pairing), which every YUP effect currently hits.
+- `state-reproducibility-basic`, `-binary` and `-buffered` are still open.
+  A hand-written CLAP host round-trips the state correctly on both platforms:
+  it sets parameters through `process()` events, saves, reloads into a fresh
+  instance (before or after activation), and reads back identical values. So
+  the cause is something specific to how the validator drives the plugin,
+  possibly YUP's CLAP `process()` dropping a block's events when its try-lock
+  fails. Not yet found.
+
 ## Credits
 
 The Risset rhythm idea is Jean-Claude Risset's; Dan Stowell's paper
