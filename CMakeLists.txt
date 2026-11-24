@@ -1,7 +1,7 @@
 cmake_minimum_required (VERSION 3.31)
 
 set (target_name rissetdrop)
-set (target_version "0.1.0")
+set (target_version "0.2.0")
 
 project (RissetDrop VERSION ${target_version} LANGUAGES C CXX OBJC OBJCXX)
 
