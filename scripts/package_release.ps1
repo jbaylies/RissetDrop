@@ -19,6 +19,7 @@ function Invoke-Checked {
 }
 
 Invoke-Checked cmake -S $root -B $build -G 'Visual Studio 17 2022' -A x64 `
+    -DYUP_DIR="$root/yup" `
     -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded -DSMTG_USE_STATIC_CRT=ON `
     -DRISSETDROP_INSTALL_PLUGINS=OFF -DRISSETDROP_BUILD_TESTS=ON
 Invoke-Checked cmake --build $build --config Release --parallel

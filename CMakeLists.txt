@@ -9,11 +9,24 @@ project (RissetDrop VERSION ${target_version} LANGUAGES C CXX OBJC OBJCXX)
 option (RISSETDROP_INSTALL_PLUGINS "Install the plugins into the user's plugin folders after each build" ON)
 option (RISSETDROP_BUILD_TESTS "Build risset_render_test, the offline DSP harness" ON)
 
-# ==== YUP, vendored next to this file
+# ==== YUP. The submodule next to this file, unless YUP_DIR names another
+# checkout, for trying a newer YUP before bumping the submodule:
+#   cmake -S . -B build-yup -DYUP_DIR=$HOME/Documents/yup
+# The release scripts always pass the submodule, so a release tag records the
+# YUP it was built with.
+set (YUP_DIR "${CMAKE_CURRENT_LIST_DIR}/yup" CACHE PATH "YUP source tree; the submodule by default")
+file (REAL_PATH "${YUP_DIR}" yup_dir EXPAND_TILDE)
+file (REAL_PATH "${CMAKE_CURRENT_LIST_DIR}/yup" yup_submodule_dir)
+if (NOT EXISTS "${yup_dir}/CMakeLists.txt")
+    message (FATAL_ERROR "No YUP at ${yup_dir}. For the submodule, run: git submodule update --init --recursive")
+endif ()
+if (NOT yup_dir STREQUAL yup_submodule_dir)
+    message (WARNING "Building against the YUP at ${yup_dir}, not the submodule")
+endif ()
 set (YUP_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set (YUP_BUILD_PLUGINS OFF CACHE BOOL "" FORCE)
 set (YUP_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-add_subdirectory (yup)
+add_subdirectory ("${yup_dir}" yup)
 
 # ==== Identity. The AU codes are OSTypes: exactly four characters, and the
 # manufacturer code needs at least one upper case letter.
