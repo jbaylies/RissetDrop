@@ -33,7 +33,7 @@ public:
 
     void resized() override;
     void paint (yup::Graphics& g) override;
-    void refreshDisplay (double lastFrameTimeSeconds) override;
+    void refreshDisplay (double lastFrameTimeSeconds);
 
 private:
     /** Holds the controls at the design size; the editor scales it. */
@@ -54,6 +54,10 @@ private:
 
     RissetProcessor& processor;
     std::unique_ptr<Content> content;
+
+    // Calls refreshDisplay() on every frame of the window this is in. Last, so
+    // it stops before any of the members above are destroyed.
+    yup::FrameAttachment frameAttachment { *this, yup::bindFront (&RissetEditor::refreshDisplay, this) };
 
     YUP_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (RissetEditor)
 };
