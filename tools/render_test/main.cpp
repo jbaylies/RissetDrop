@@ -636,7 +636,9 @@ int main (int argc, char** argv)
             problems.push_back ("landing mismatch");
         if (r.maxRateJump > 0.25 && ! s.fuzz)
             problems.push_back ("rate jump");
-        if (r.worstBlockLoad > 0.5)
+        // Skipped in virtual machines, where the host pausing the guest shows up as
+        // a slow block; real hardware (the Mac, Windows, the Pi) keeps the check
+        if (r.worstBlockLoad > 0.5 && std::getenv ("RISSET_SKIP_TIMING") == nullptr)
             problems.push_back ("a block took over half its real-time budget (at " + std::to_string (r.worstBlockSeconds)
                                 + " s, phase " + std::to_string (r.worstBlockPhase) + ")");
         if (r.allocations != 0)

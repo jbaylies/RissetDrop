@@ -3,7 +3,13 @@ cmake_minimum_required (VERSION 3.31)
 set (target_name rissetdrop)
 set (target_version "0.2.0")
 
-project (RissetDrop VERSION ${target_version} LANGUAGES C CXX OBJC OBJCXX)
+project (RissetDrop VERSION ${target_version} LANGUAGES C CXX)
+if (APPLE)
+    enable_language (OBJC OBJCXX)
+endif ()
+
+# No C++20 modules here, and scanning for them needs clang-scan-deps on Linux
+set (CMAKE_CXX_SCAN_FOR_MODULES OFF)
 
 # Off for release packaging, so building never touches the installed plugins
 option (RISSETDROP_INSTALL_PLUGINS "Install the plugins into the user's plugin folders after each build" ON)
@@ -40,6 +46,13 @@ set (plugin_au_manufacturer "Sous")
 set (plugin_au_subtype "RsDp")
 set (plugin_copyright "MIT License. Copyright (c) 2026 RissetDrop contributors.")
 
+# LV2 is for Linux hosts; elsewhere the other formats cover them
+if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    set (create_lv2 ON)
+else ()
+    set (create_lv2 OFF)
+endif ()
+
 yup_audio_plugin (
     TARGET_NAME ${target_name}
     TARGET_VERSION ${target_version}
@@ -60,7 +73,7 @@ yup_audio_plugin (
     PLUGIN_CREATE_VST3 ON
     PLUGIN_CREATE_AU ON
     PLUGIN_CREATE_AUv3 OFF
-    PLUGIN_CREATE_LV2 OFF
+    PLUGIN_CREATE_LV2 ${create_lv2}
     PLUGIN_CREATE_AAX OFF
     PLUGIN_CREATE_STANDALONE ON
     PLUGIN_CLAP_FEATURES audio-effect stereo
@@ -104,15 +117,14 @@ elseif (APPLE)
     endforeach()
 elseif (WIN32)
     # YUP installs nothing on Windows. The per-user folders from the VST3 and
-    # CLAP specs need no administrator rights. A VST3 bundle's inner binary
-    # must carry the bundle's name, so both are renamed.
+    # CLAP specs need no administrator rights. YUP names the VST3 bundle and
+    # its inner binary after the plugin, as the VST3 SDK requires.
     set (user_plugins "$ENV{LOCALAPPDATA}/Programs/Common")
     if (TARGET ${target_name}_vst3_plugin)
         set (vst3_bundle "${user_plugins}/VST3/${plugin_name}.vst3")
         add_custom_command (TARGET ${target_name}_vst3_plugin POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E rm -rf "${vst3_bundle}"
             COMMAND ${CMAKE_COMMAND} -E copy_directory "$<TARGET_FILE_DIR:${target_name}_vst3_plugin>/../.." "${vst3_bundle}"
-            COMMAND ${CMAKE_COMMAND} -E rename "${vst3_bundle}/Contents/x86_64-win/$<TARGET_FILE_NAME:${target_name}_vst3_plugin>" "${vst3_bundle}/Contents/x86_64-win/${plugin_name}.vst3"
             COMMENT "Copying VST3 plugin to ${vst3_bundle}"
             VERBATIM)
     endif()
@@ -123,6 +135,33 @@ elseif (WIN32)
             COMMENT "Copying CLAP plugin to ${user_plugins}/CLAP/${plugin_name}.clap"
             VERBATIM)
     endif()
+elseif (CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    # YUP installs nothing on Linux. These are the per-user folders from the
+    # VST3, CLAP and LV2 specs, which every Linux host scans.
+    if (TARGET ${target_name}_vst3_plugin)
+        set (vst3_bundle "$ENV{HOME}/.vst3/${plugin_name}.vst3")
+        add_custom_command (TARGET ${target_name}_vst3_plugin POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E rm -rf "${vst3_bundle}"
+            COMMAND ${CMAKE_COMMAND} -E copy_directory "$<TARGET_FILE_DIR:${target_name}_vst3_plugin>/../.." "${vst3_bundle}"
+            COMMENT "Copying VST3 plugin to ${vst3_bundle}"
+            VERBATIM)
+    endif()
+    if (TARGET ${target_name}_clap_plugin)
+        add_custom_command (TARGET ${target_name}_clap_plugin POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E make_directory "$ENV{HOME}/.clap"
+            COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:${target_name}_clap_plugin>" "$ENV{HOME}/.clap/${plugin_name}.clap"
+            COMMENT "Copying CLAP plugin to $ENV{HOME}/.clap/${plugin_name}.clap"
+            VERBATIM)
+    endif()
+    if (TARGET ${target_name}_lv2_plugin)
+        # YUP assembles the bundle in its own POST_BUILD step, which runs first
+        set (lv2_bundle "$ENV{HOME}/.lv2/${plugin_name}.lv2")
+        add_custom_command (TARGET ${target_name}_lv2_plugin POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E rm -rf "${lv2_bundle}"
+            COMMAND ${CMAKE_COMMAND} -E copy_directory "$<TARGET_FILE_DIR:${target_name}_lv2_plugin>/${plugin_name}.lv2" "${lv2_bundle}"
+            COMMENT "Copying LV2 plugin to ${lv2_bundle}"
+            VERBATIM)
+    endif()
 endif()
 
 # ==== Strict warnings on our own files only. YUP and its externals are read as
@@ -130,7 +169,10 @@ endif()
 if (MSVC)
     set (strict_warnings "/W4;/external:anglebrackets;/external:W0")
 else()
-    set (strict_warnings "--system-header-prefix=yup_;--system-header-prefix=xsimd/;-Wall;-Wextra;-Wpedantic;-Wshadow;-Wconversion;-Wsign-conversion;-Wfloat-conversion;-Wdouble-promotion")
+    set (strict_warnings "-Wall;-Wextra;-Wpedantic;-Wshadow;-Wconversion;-Wsign-conversion;-Wfloat-conversion;-Wdouble-promotion")
+    if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        list (PREPEND strict_warnings "--system-header-prefix=yup_;--system-header-prefix=xsimd/")
+    endif()
 endif()
 
 # ==== DSP: plain C++, no YUP, shared by the plugin and the offline harness

@@ -1,0 +1,53 @@
+RissetDrop @VERSION@ for Linux
+==============================
+
+An audio effect that makes the beat seem to speed up (or slow down) forever,
+for drops, risers and fills. VST3, CLAP and LV2 plugins plus a standalone app.
+Built on Ubuntu 22.04: runs on Linux with glibc 2.35 or later (Ubuntu 22.04,
+Debian 12, Fedora 36 and newer). Use the x86_64 download on a PC and the
+aarch64 one on 64-bit ARM, such as a Raspberry Pi 4 or 5.
+
+Source and manual: https://github.com/jbaylies/RissetDrop
+
+
+Install
+-------
+
+Copy each plugin into its folder. Create the folder if it doesn't exist.
+
+  RissetDrop.vst3   ~/.vst3   (Bitwig, Reaper, Ardour)
+  RissetDrop.clap   ~/.clap   (Bitwig, Reaper)
+  RissetDrop.lv2    ~/.lv2    (Ardour, Carla, Zrythm)
+  RissetDrop        anywhere, such as ~/.local/bin
+
+RissetDrop.vst3 and RissetDrop.lv2 are folders: copy the whole folder. For
+every user on the machine, use /usr/lib/vst3, /usr/lib/clap and /usr/lib/lv2
+instead.
+
+From a terminal, in the unpacked folder:
+
+  mkdir -p ~/.vst3 ~/.clap ~/.lv2
+  cp -r RissetDrop.vst3 ~/.vst3/
+  cp RissetDrop.clap ~/.clap/
+  cp -r RissetDrop.lv2 ~/.lv2/
+
+Then rescan plugins in your DAW.
+
+The plugins and the app need an X11 or XWayland desktop with OpenGL, and the
+app plays through ALSA or JACK (PipeWire's JACK and ALSA support work too).
+
+
+Using it
+--------
+
+Put RissetDrop on a drum bus, a loop or the mix. Press DROP (or automate the
+Drop parameter) a bar or two before the moment you're building into, and
+release it on the downbeat. With Return set to "On grid" it lands back in time
+with the track. The README on GitHub explains every control.
+
+
+Licenses
+--------
+
+LICENSE: RissetDrop is MIT licensed.
+THIRD_PARTY_LICENSES.txt: the libraries built into it.
