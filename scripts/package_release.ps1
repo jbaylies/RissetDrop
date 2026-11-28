@@ -30,12 +30,10 @@ Invoke-Checked (Join-Path $build 'Release\risset_render_test.exe')
 if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }
 New-Item -ItemType Directory $stage | Out-Null
 
-# A VST3 bundle's inner binary must carry the bundle's name
 $vst3 = Join-Path $stage 'RissetDrop.vst3'
-Copy-Item -Recurse (Join-Path $build 'VST3\Release\rissetdrop_vst3_plugin.vst3') $vst3
-Rename-Item (Join-Path $vst3 'Contents\x86_64-win\rissetdrop_vst3_plugin.vst3') 'RissetDrop.vst3'
+Copy-Item -Recurse (Join-Path $build 'VST3\Release\RissetDrop.vst3') $vst3
 
-Copy-Item (Join-Path $build 'Release\rissetdrop_clap_plugin.clap') (Join-Path $stage 'RissetDrop.clap')
+Copy-Item (Join-Path $build 'CLAP\Release\RissetDrop.clap') (Join-Path $stage 'RissetDrop.clap')
 Copy-Item (Join-Path $build 'Release\RissetDrop.exe') (Join-Path $stage 'RissetDrop.exe')
 
 Write-Host "Staged in $stage"

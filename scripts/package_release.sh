@@ -27,9 +27,9 @@ cmake --build "$build" --config Release -j
 
 rm -rf "$stage"
 mkdir -p "$stage"
-ditto "$build/rissetdrop_au_plugin.component" "$stage/RissetDrop.component"
-ditto "$build/VST3/Release/rissetdrop_vst3_plugin.vst3" "$stage/RissetDrop.vst3"
-ditto "$build/rissetdrop_clap_plugin.clap" "$stage/RissetDrop.clap"
+ditto "$build/AU/RissetDrop.component" "$stage/RissetDrop.component"
+ditto "$build/VST3/Release/RissetDrop.vst3" "$stage/RissetDrop.vst3"
+ditto "$build/CLAP/RissetDrop.clap" "$stage/RissetDrop.clap"
 ditto "$build/RissetDrop.app" "$stage/RissetDrop.app"
 
 # YUP's bundles carry signatures that no longer match their contents
